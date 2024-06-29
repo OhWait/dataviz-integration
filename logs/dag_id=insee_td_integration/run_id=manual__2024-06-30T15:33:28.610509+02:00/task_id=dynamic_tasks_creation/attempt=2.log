@@ -1,0 +1,44 @@
+[2024-06-30T15:38:34.546+0200] {local_task_job_runner.py:120} INFO - ::group::Pre task execution logs
+[2024-06-30T15:38:34.592+0200] {taskinstance.py:2076} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: insee_td_integration.dynamic_tasks_creation manual__2024-06-30T15:33:28.610509+02:00 [queued]>
+[2024-06-30T15:38:34.603+0200] {taskinstance.py:2076} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: insee_td_integration.dynamic_tasks_creation manual__2024-06-30T15:33:28.610509+02:00 [queued]>
+[2024-06-30T15:38:34.603+0200] {taskinstance.py:2306} INFO - Starting attempt 2 of 2
+[2024-06-30T15:38:34.661+0200] {taskinstance.py:2330} INFO - Executing <Task(PythonOperator): dynamic_tasks_creation> on 2024-06-30 15:33:28.610509+02:00
+[2024-06-30T15:38:34.672+0200] {standard_task_runner.py:90} INFO - Running: ['airflow', 'tasks', 'run', 'insee_td_integration', 'dynamic_tasks_creation', 'manual__2024-06-30T15:33:28.610509+02:00', '--job-id', '116', '--raw', '--subdir', 'DAGS_FOLDER/insee_td_integration.py', '--cfg-path', '/tmp/tmpikiuch4m']
+[2024-06-30T15:38:34.671+0200] {warnings.py:112} WARNING - /home/airflow/.local/lib/python3.12/site-packages/airflow/task/task_runner/standard_task_runner.py:61: DeprecationWarning: This process (pid=168) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  pid = os.fork()
+
+[2024-06-30T15:38:34.673+0200] {standard_task_runner.py:91} INFO - Job 116: Subtask dynamic_tasks_creation
+[2024-06-30T15:38:34.673+0200] {standard_task_runner.py:63} INFO - Started process 170 to run task
+[2024-06-30T15:38:34.896+0200] {task_command.py:426} INFO - Running <TaskInstance: insee_td_integration.dynamic_tasks_creation manual__2024-06-30T15:33:28.610509+02:00 [running]> on host d9ce1af4e23c
+[2024-06-30T15:38:35.090+0200] {taskinstance.py:2648} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='airflow' AIRFLOW_CTX_DAG_ID='insee_td_integration' AIRFLOW_CTX_TASK_ID='dynamic_tasks_creation' AIRFLOW_CTX_EXECUTION_DATE='2024-06-30T15:33:28.610509+02:00' AIRFLOW_CTX_TRY_NUMBER='2' AIRFLOW_CTX_DAG_RUN_ID='manual__2024-06-30T15:33:28.610509+02:00'
+[2024-06-30T15:38:35.092+0200] {taskinstance.py:430} INFO - ::endgroup::
+[2024-06-30T15:38:35.093+0200] {taskinstance.py:441} INFO - ::group::Post task execution logs
+[2024-06-30T15:38:35.093+0200] {taskinstance.py:2905} ERROR - Task failed with exception
+Traceback (most recent call last):
+  File "/home/airflow/.local/lib/python3.12/site-packages/airflow/models/taskinstance.py", line 465, in _execute_task
+    result = _execute_callable(context=context, **execute_callable_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.12/site-packages/airflow/models/taskinstance.py", line 432, in _execute_callable
+    return execute_callable(context=context, **execute_callable_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.12/site-packages/airflow/models/baseoperator.py", line 401, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.12/site-packages/airflow/operators/python.py", line 235, in execute
+    return_value = self.execute_callable()
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/airflow/.local/lib/python3.12/site-packages/airflow/operators/python.py", line 252, in execute_callable
+    return self.python_callable(*self.op_args, **self.op_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/airflow/dags/insee_td_integration.py", line 86, in create_tasks
+    files = get_files(file_path)
+            ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/airflow/dags/insee_td_integration.py", line 70, in get_files
+    return [os.path.join(file_path, f) for f in os.listdir(file_path) if os.path.isfile(os.path.join(file_path, f))]
+                                                ^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/usr/local/airflow/upload/insee/td'
+[2024-06-30T15:38:35.111+0200] {taskinstance.py:1206} INFO - Marking task as FAILED. dag_id=insee_td_integration, task_id=dynamic_tasks_creation, run_id=manual__2024-06-30T15:33:28.610509+02:00, execution_date=20240630T153328, start_date=20240630T153834, end_date=20240630T153835
+[2024-06-30T15:38:35.152+0200] {standard_task_runner.py:110} ERROR - Failed to execute job 116 for task dynamic_tasks_creation ([Errno 2] No such file or directory: '/usr/local/airflow/upload/insee/td'; 170)
+[2024-06-30T15:38:35.170+0200] {local_task_job_runner.py:240} INFO - Task exited with return code 1
+[2024-06-30T15:38:35.208+0200] {taskinstance.py:3503} INFO - 0 downstream tasks scheduled from follow-on schedule check
+[2024-06-30T15:38:35.246+0200] {local_task_job_runner.py:222} INFO - ::endgroup::
