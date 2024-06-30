@@ -16,50 +16,56 @@ default_args = {
 }
 
 def process_file(file_path, pg_user, pg_password, pg_host, pg_port, pg_db):
-    # Extract table name and millesime from file name
-    file_name = os.path.basename(file_path)
-    parts = file_name.split('_')
-    table_name = parts[2].lower()
-    millesime = parts[-1].split('.')[0]
-    
-    # Read the file
-    df = pd.read_csv(file_path, sep=';', dtype=str)
-    
-    # Map columns based on file
-    if 'LIBGEO' in df.columns:
-        df = df[['NIVGEO', 'CODGEO', 'SEXE', 'AGEPYR10', 'NB']]
-        df.columns = ['nivgeo', 'codgeo', 'sexe', 'agepyr10', 'nb']
-    else:
-        df.columns = ['nivgeo', 'codgeo', 'agepyr10', 'sexe', 'nb']
-    
-    # Convert 'NB' column to numeric
-    df['nb'] = df['nb'].str.replace(',', '.').astype(float)
-    
-    # Add the millesime column
-    df['millesime'] = millesime
-    
-    # Connect to PostgreSQL
-    conn = psycopg2.connect(
-        dbname=pg_db,
-        user=pg_user,
-        password=pg_password,
-        host=pg_host,
-        port=pg_port
-    )
-    cursor = conn.cursor()
-    
-    # Insert data into PostgreSQL
-    for _, row in df.iterrows():
-        cursor.execute(
-            f"""
-            INSERT INTO insee.{table_name} (millesime, nivgeo, codgeo, agepyr10, sexe, nb)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """, tuple(row)
+    try:
+        print(f"Processing file: {file_path} with user {pg_user} on db {pg_db}")
+        # Extract table name and millesime from file name
+        file_name = os.path.basename(file_path)
+        parts = file_name.split('_')
+        table_name = parts[2].lower()
+        millesime = parts[-1].split('.')[0]
+        
+        # Read the file
+        df = pd.read_csv(file_path, sep=';', dtype=str)
+        
+        # Map columns based on file
+        if 'LIBGEO' in df.columns:
+            df = df[['NIVGEO', 'CODGEO', 'SEXE', 'AGEPYR10', 'NB']]
+            df.columns = ['nivgeo', 'codgeo', 'sexe', 'agepyr10', 'nb']
+        else:
+            df.columns = ['nivgeo', 'codgeo', 'agepyr10', 'sexe', 'nb']
+        
+        # Convert 'NB' column to numeric
+        df['nb'] = df['nb'].str.replace(',', '.').astype(float)
+        
+        # Add the millesime column
+        df['millesime'] = millesime
+        
+        # Connect to PostgreSQL
+        conn = psycopg2.connect(
+            dbname=pg_db,
+            user=pg_user,
+            password=pg_password,
+            host=pg_host,
+            port=pg_port
         )
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
+        cursor = conn.cursor()
+        
+        # Insert data into PostgreSQL
+        for _, row in df.iterrows():
+            cursor.execute(
+                f"""
+                INSERT INTO insee.{table_name} (millesime, nivgeo, codgeo, agepyr10, sexe, nb)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """, tuple(row)
+            )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    except Exception as e:
+        print(f"Error processing file {file_path}: {str(e)}")
+        raise
 
 def get_files():
     # List of files to process
@@ -93,11 +99,11 @@ with DAG(
             python_callable=process_file,
             op_kwargs={
                 'file_path': file,
-                'pg_user': 'postgres',
-                'pg_password': 'postgres',
-                'pg_host': 'host.docker.internal',
-                'pg_port': 5432,
-                'pg_db': 'your_existing_db'
+                'pg_user': os.getenv('POSTGRES_USER'),
+                'pg_password': os.getenv('POSTGRES_PASSWORD'),
+                'pg_host': os.getenv('POSTGRES_HOST'),
+                'pg_port': os.getenv('POSTGRES_PORT'),
+                'pg_db': os.getenv('POSTGRES_DB')
             },
             dag=dag
         )

@@ -7,8 +7,12 @@ services:
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__DAGS_FOLDER=/usr/local/airflow/dags
     env_file:
       - .env
+    volumes:
+      - ./dags:/usr/local/airflow/dags
+      - ./upload:/upload
     networks:
       - database
 
@@ -30,6 +34,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    volumes:
+      - ./dags:/usr/local/airflow/dags
+      - ./upload:/upload
     networks:
       - database
 
@@ -44,6 +51,25 @@ services:
     env_file:
       - .env
     command: scheduler
+    volumes:
+      - ./dags:/usr/local/airflow/dags
+      - ./upload:/upload
+    networks:
+      - database
+
+  airflow-worker:
+    image: apache/airflow:2.5.0
+    restart: always
+    environment:
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'no'
+    command: worker
+    logging:
+      driver: "json-file"  # Utilisation du driver de logging JSON pour les logs en format JSON
+      options:
+        max-size: "10m"     # Taille maximale par fichier de log
+        max-file: "3"       # Nombre maximum de fichiers de log
     networks:
       - database
 
