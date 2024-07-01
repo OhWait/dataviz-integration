@@ -1,6 +1,7 @@
 from __future__ import annotations
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 import os
 import pandas as pd
 import psycopg2
@@ -33,14 +34,17 @@ def prepare_table(millesime, table_name):
         cursor.execute(f"DELETE FROM insee.{table_name} WHERE millesime = %s", (millesime,))
         
         # Create partition for the millesime
-        cursor.execute(f"""
-            CREATE TABLE IF NOT EXISTS insee.{table_name}_{millesime} PARTITION OF insee.{table_name}
-            FOR VALUES FROM ('{millesime}') TO ('{int(millesime) + 1}')
-        """)
+        partition_query = f"""
+        CREATE TABLE IF NOT EXISTS insee.{table_name}_{millesime} PARTITION OF insee.{table_name}
+        FOR VALUES FROM ('{millesime}') TO ('{int(millesime) + 1}')
+        """
+        cursor.execute(partition_query)
+        
+        conn.commit()
 
         cursor.close()
         conn.close()
-        print(f"Successfully cleaned table insee.{table_name} for millesime {millesime}")
+        print(f"Successfully cleaned table insee.{table_name} and created partition for millesime {millesime}")
 
     except Exception as e:
         print(f"Error cleaning table insee.{table_name} for millesime {millesime}: {str(e)}")
@@ -61,7 +65,7 @@ def process_file(file_path):
         # Map columns based on file
         if 'LIBGEO' in df.columns:
             df = df[['NIVGEO', 'CODGEO', 'SEXE', 'AGEPYR10', 'NB']]
-            df.columns = ['nivgeo', 'codgeo', 'agepyr10', 'sexe', 'nb']
+            df.columns = ['nivgeo', 'codgeo', 'sexe', 'agepyr10', 'nb']
         elif 'REG' in df.columns and 'DEP' in df.columns:
             df = df[['NIVEAU', 'CODGEO', 'C_AGEPYR', 'C_SEXE', 'NB']]
             df.columns = ['nivgeo', 'codgeo', 'agepyr10', 'sexe', 'nb']
@@ -74,11 +78,11 @@ def process_file(file_path):
         
         # Add the millesime column
         df['millesime'] = millesime
-        
+
         # Split the dataframe into batches of 1000 rows
         batches = [df.iloc[i:i + 1000] for i in range(0, len(df), 1000)]
         
-        # Create tasks for each batch
+        # Process each batch
         for idx, batch in enumerate(batches):
             process_batch(batch, table_name, millesime, idx)
 
@@ -113,7 +117,7 @@ def process_batch(batch, table_name, millesime, batch_idx):
         cursor.executemany(
             f"""
             INSERT INTO insee.{table_name} (millesime, nivgeo, codgeo, agepyr10, sexe, nb)
-            VALUES 
+            VALUES (%s, %s, %s, %s, %s, %s)
             """, tuples
         )
         
@@ -124,13 +128,6 @@ def process_batch(batch, table_name, millesime, batch_idx):
 
     except Exception as e:
         print(f"Error processing batch {batch_idx} for millesime {millesime}: {str(e)}")
-        print(
-            f"""
-            INSERT INTO insee.{table_name} (millesime, nivgeo, codgeo, agepyr10, sexe, nb)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """, 
-            tuples
-        )
         raise
 
 def get_files(directory_path):
