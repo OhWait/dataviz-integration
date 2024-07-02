@@ -1,10 +1,9 @@
-from __future__ import annotations
-from airflow.models.dag import DAG
+from airflow import DAG
 from airflow.operators.python import PythonOperator
-import os
+from airflow.utils.dates import days_ago
 import pandas as pd
 import psycopg2
-import pendulum
+import os
 import tempfile
 
 default_args = {
@@ -14,9 +13,6 @@ default_args = {
     'email_on_retry': False,
     'retries': 1
 }
-
-def pendulum_days_ago(days):
-    return pendulum.today('UTC').add(days=-days)
 
 def prepare_table(millesime, table_name):
     try:
@@ -46,7 +42,7 @@ def prepare_table(millesime, table_name):
         print(f"Error cleaning table insee.{table_name} for millesime {millesime}: {str(e)}")
         raise
 
-def transform_file(file_path):
+def transform_clean_pop1a(file_path, **kwargs):
     try:
         print(f"Transforming file: {file_path}")
         # Extract table name and millesime from file name
@@ -110,16 +106,9 @@ def transform_file(file_path):
         except Exception as cleanup_error:
             print(f"Error cleaning up temporary files: {str(cleanup_error)}")
 
-def process_file(file_path):
+def load_to_db(file_path, **kwargs):
     try:
-        transformed_file = transform_file(file_path)
-        parts = file_path.split('_')
-        table_name = f"insee.{parts[2].lower()}"
-        
-        print(f"Processing file: {transformed_file}")
-        print(f"Table name: {table_name}")
-
-        # Insert data into PostgreSQL using COPY
+        print("pop1a - load")
         conn = psycopg2.connect(
             dbname=os.getenv('POSTGRES_DB'),
             user=os.getenv('POSTGRES_USER'),
@@ -129,76 +118,45 @@ def process_file(file_path):
         )
         cursor = conn.cursor()
 
-        # Read the transformed CSV file and insert data into PostgreSQL
-        with open(transformed_file, 'r') as f:
-            next(f)  # Skip header line
-            cursor.copy_expert(f"COPY {table_name} FROM STDIN CSV HEADER", f)
+        with open(file_path, 'r') as f:
+            cursor.copy_expert(f"COPY insee.pop1a FROM STDIN WITH CSV HEADER", f)
         
         conn.commit()
         cursor.close()
         conn.close()
-        
-        print(f"Data inserted into table {table_name} successfully.")
 
     except Exception as e:
-        print(f"Error processing file {transformed_file}: {str(e)}")
         raise
 
-def get_files(directory_path):
-    return [os.path.join(directory_path, f) for f in os.listdir(directory_path) if os.path.isfile(os.path.join(directory_path, f))]
-
-def create_tasks(dag):
-    # Get the list of files to process dynamically
-    files = get_files('/opt/airflow/upload/insee/td/')
-    
-    previous_task = None
-    
-    for file_path in files:
-        file_name = os.path.basename(file_path)
-        parts = file_name.split('_')
-        
-        if len(parts) < 3:
-            print(f"Skipping file {file_path} because file name format is incorrect.")
-            continue # Skip files that do not match expected format
-        
-        table_name = parts[2].lower()
-        millesime = parts[-1].split('.')[0]
-    
-        prepare_task = PythonOperator(
-            task_id=f'clean_{table_name}_{millesime}',
-            python_callable=prepare_table,
-            op_args=[millesime, table_name],
-            dag=dag,
-        )
-
-        process_task = PythonOperator(
-            task_id=f'process_{file_name}',
-            python_callable=process_file,
-            op_args=[file_path],
-            dag=dag,
-        )
-        
-        if previous_task:
-            previous_task >> prepare_task
-        else:
-            start >> prepare_task
-        
-        prepare_task >> process_task
-        previous_task = process_task
-
-# Define the DAG
 with DAG(
-    'insee_td_integration',
+    'insee_td_pop1a',
     default_args=default_args,
-    description='DAG for integrating INSEE data into PostgreSQL',
+    description='Transform, clean, map, and integrate data for pop1a',
     schedule_interval=None,
-    start_date=pendulum_days_ago(1),  # Start date of DAG execution
-    catchup=False,
-    tags=['INSEE', 'data_integration']
+    start_date=days_ago(1),
+    catchup=False
 ) as dag:
-    start = PythonOperator(
-        task_id='start',
-        python_callable=lambda: print("Starting task creation..."),
+    print("INSEE TD POP1A script")
+
+    prepare_table_task = PythonOperator(
+        task_id='prepare_table_pop1a',
+        python_callable=prepare_table,
+        provide_context=True,
+        op_args=['{{ dag_run.conf["millesime"] }}', '{{ dag_run.conf["table_name"] }}'],
     )
 
-    create_tasks(dag)
+    transform_clean_task = PythonOperator(
+        task_id='transform_clean_pop1a',
+        python_callable=transform_clean_pop1a,
+        provide_context=True,
+        op_args=['{{ dag_run.conf["file_path"] }}'],
+    )
+
+    load_task = PythonOperator(
+        task_id='load_to_db',
+        python_callable=load_to_db,
+        provide_context=True,
+        op_args=['{{ task_instance.xcom_pull(task_ids="transform_clean_pop1a") }}'],
+    )
+
+    prepare_table_task >> transform_clean_task >> load_task
