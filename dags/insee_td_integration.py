@@ -84,6 +84,7 @@ def transform_file(file_path):
 
         # Convert 'NB' column to numeric
         df['nb'] = df['nb'].str.replace(',', '.').astype(float)
+        df = df.dropna(subset=['nivgeo', 'codgeo', 'agepyr10', 'sexe', 'nb'])
 
         # Add the millesime column
         df['millesime'] = millesime

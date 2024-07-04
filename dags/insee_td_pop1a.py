@@ -80,9 +80,11 @@ def transform_clean_pop1a(file_path, **kwargs):
 
         # Convert 'NB' column to numeric
         df['nb'] = df['nb'].str.replace(',', '.').astype(float)
+        df = df.dropna(subset=['nivgeo', 'codgeo', 'agepyr10', 'sexe', 'nb'])
 
-        # Add the millesime column
+        # Transform
         df['millesime'] = millesime
+        df['agepyr10'] = df['agepyr10'].str.zfill(2)
 
         # Log the transformed DataFrame columns for debugging
         print(df.columns)
