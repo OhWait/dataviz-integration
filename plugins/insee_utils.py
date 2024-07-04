@@ -1,7 +1,6 @@
 import pandas as pd
 import psycopg2
 import os
-import tempfile
 
 def prepare_table(millesime, table_name):
     try:
@@ -33,7 +32,7 @@ def prepare_table(millesime, table_name):
 
 def load_to_db(file_path, table_name):
     try:
-        print(f"Loading data into table insee.{table_name}")
+        print(f"Loading data into table insee.{table_name} from path {file_path}")
         conn = psycopg2.connect(
             dbname=os.getenv('POSTGRES_DB'),
             user=os.getenv('POSTGRES_USER'),
