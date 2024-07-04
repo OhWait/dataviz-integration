@@ -16,8 +16,6 @@ def identify_and_trigger_dags(**context):
     directory_path = '/opt/airflow/upload/insee/td/'
     files = [f for f in os.listdir(directory_path) if os.path.isfile(os.path.join(directory_path, f))]
 
-    previous_task = None
-    
     for file_name in files:
         parts = file_name.split('_')
         if len(parts) < 3:
@@ -41,13 +39,6 @@ def identify_and_trigger_dags(**context):
         )
         trigger_dag_run.execute(context=context)
 
-        if previous_task:
-            previous_task >> trigger_dag_run
-        else:
-            start >> trigger_dag_run
-        
-        previous_task = trigger_dag_run
-
 with DAG(
     'insee_td_dispatcher',
     default_args=default_args,
@@ -56,11 +47,6 @@ with DAG(
     start_date=days_ago(1),
     catchup=False
 ) as dag:
-    start = PythonOperator(
-        task_id='start',
-        python_callable=lambda: print("Starting task creation..."),
-    )
-    
     PythonOperator(
         task_id='identify_and_trigger_dags',
         python_callable=identify_and_trigger_dags,
