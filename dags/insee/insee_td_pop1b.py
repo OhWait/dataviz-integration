@@ -1,8 +1,10 @@
+import sys
+sys.path.append('/opt/airflow/plugins/insee_utils')
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
+from insee_utils import prepare_table, load_to_db
 import pandas as pd
-import psycopg2
 import os
 import tempfile
 
@@ -13,34 +15,6 @@ default_args = {
     'email_on_retry': False,
     'retries': 1
 }
-
-def prepare_table(millesime, table_name):
-    try:
-        print(f"Cleaning table insee.{table_name} for millesime {millesime}")
-        conn = psycopg2.connect(
-            dbname=os.getenv('POSTGRES_DB'),
-            user=os.getenv('POSTGRES_USER'),
-            password=os.getenv('POSTGRES_PASSWORD'),
-            host=os.getenv('POSTGRES_HOST'),
-            port=os.getenv('POSTGRES_PORT')
-        )
-        cursor = conn.cursor()
-        
-        cursor.execute(f"DELETE FROM insee.{table_name} WHERE millesime = %s", (millesime,))
-        cursor.execute(f"""
-            CREATE TABLE IF NOT EXISTS insee.{table_name}_{millesime} 
-            PARTITION OF insee.{table_name} 
-            FOR VALUES FROM (%s) TO (%s)
-            """, (millesime, int(millesime) + 1))
-        conn.commit()
-
-        cursor.close()
-        conn.close()
-        print(f"Successfully cleaned table insee.{table_name} for millesime {millesime}")
-
-    except Exception as e:
-        print(f"Error cleaning table insee.{table_name} for millesime {millesime}: {str(e)}")
-        raise
 
 def transform_clean_pop1b(file_path, **kwargs):
     try:
@@ -81,11 +55,9 @@ def transform_clean_pop1b(file_path, **kwargs):
         else:
             raise KeyError("Required columns not found in DataFrame")
 
-        # Convert 'NB' column to numeric
+        # Transform
         df['nb'] = df['nb'].str.replace(',', '.').astype(float)
         df = df.dropna(subset=['nivgeo', 'codgeo', 'aged100', 'sexe', 'nb'])
-
-        # Transform
         df['millesime'] = millesime
         df['aged100'] = df['aged100'].str.zfill(3)
 
@@ -111,28 +83,6 @@ def transform_clean_pop1b(file_path, **kwargs):
         except Exception as cleanup_error:
             print(f"Error cleaning up temporary files: {str(cleanup_error)}")
 
-def load_to_db(file_path, **kwargs):
-    try:
-        print("pop1b - load")
-        conn = psycopg2.connect(
-            dbname=os.getenv('POSTGRES_DB'),
-            user=os.getenv('POSTGRES_USER'),
-            password=os.getenv('POSTGRES_PASSWORD'),
-            host=os.getenv('POSTGRES_HOST'),
-            port=os.getenv('POSTGRES_PORT')
-        )
-        cursor = conn.cursor()
-
-        with open(file_path, 'r') as f:
-            cursor.copy_expert(f"COPY insee.pop1b FROM STDIN WITH CSV HEADER", f)
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-    except Exception as e:
-        raise
-
 with DAG(
     'insee_td_pop1b',
     default_args=default_args,
@@ -146,7 +96,6 @@ with DAG(
     prepare_table_task = PythonOperator(
         task_id='prepare_table_pop1b',
         python_callable=prepare_table,
-        provide_context=True,
         op_args=['{{ dag_run.conf["millesime"] }}', '{{ dag_run.conf["table_name"] }}'],
     )
 
@@ -160,8 +109,7 @@ with DAG(
     load_task = PythonOperator(
         task_id='load_to_db',
         python_callable=load_to_db,
-        provide_context=True,
-        op_args=['{{ task_instance.xcom_pull(task_ids="transform_clean_pop1b") }}'],
+        op_args=['{{ task_instance.xcom_pull(task_ids="transform_clean_pop1b") }}', '{{ dag_run.conf["table_name"] }}'],
     )
 
     prepare_table_task >> transform_clean_task >> load_task

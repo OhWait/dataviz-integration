@@ -15,7 +15,7 @@ default_args = {
 def identify_and_trigger_dags(**context):
     directory_path = '/opt/airflow/upload/insee/td/'
     files = [f for f in os.listdir(directory_path) if os.path.isfile(os.path.join(directory_path, f))]
-    
+
     previous_task = None
     
     for file_name in files:
@@ -32,15 +32,15 @@ def identify_and_trigger_dags(**context):
             task_id=f'trigger_{table_name}_dag_{millesime}',
             trigger_dag_id=f'insee_td_{table_name}',
             conf={
-                'file_path': f'{directory_path}{file_name}',
+                'file_path': full_path,
                 'millesime': millesime,
-                'table_name': table_name,
+                'table_name': table_name
             },
             wait_for_completion=True,
-            dag=context['dag'],  # Ajout du paramètre dag
+            dag=context['dag'],
         )
-        trigger_dag_run.execute(context)
-        
+        trigger_dag_run.execute(context=context)
+
         if previous_task:
             previous_task >> trigger_dag_run
         else:
@@ -51,7 +51,7 @@ def identify_and_trigger_dags(**context):
 with DAG(
     'insee_td_dispatcher',
     default_args=default_args,
-    description='Identify table and trigger corresponding DAG',
+    description='Dispatcher DAG for INSEE TD data processing',
     schedule_interval=None,
     start_date=days_ago(1),
     catchup=False
