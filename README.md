@@ -2,20 +2,25 @@
 
 To install the application, you will first need to install docker as well as docker-compose. You can use the pre-installed commands compatible with Linux. It is recommended to install Makes commands: 
 
-    sudo apt-get install build-essential
-    
-## Before installing the application you will need: 
+```
+sudo apt-get install build-essential
+```
 
-- a PostgreSQL database (or another but you will have to adapt the SQL scripts)
+you also need:
+- a PostgreSQL database (or another but you may have to adapt the SQL scripts)
 - rename the *.env.local* file as *.env* and adapt the variables to your use case
 
 ## Installation
 
-    make start
+```
+make start
+```
 
-once this is down
+once this is done
 
-    make up
+```
+make up
+```
 
 ## Warning
 
