@@ -8,24 +8,24 @@ import pandas as pd
 import os
 import tempfile
 
-table_name = 'pop2'
+table_name = 'pop5'
 
 pg_columns = [
     'millesime',
     'nivgeo',
     'codgeo',
-    'ageq100',
-    'catpr',
     'sexe',
+    'ageq65',
+    'tactr',
     'nb',
 ]
 
 file_required = [
     'nivgeo',
     'codgeo',
-    'ageq100',
-    'catpr',
     'sexe',
+    'ageq65',
+    'tactr',
     'nb',
 ]
 
@@ -37,7 +37,7 @@ default_args = {
     'retries': 1
 }
 
-def transform_clean_pop2(file_path, **kwargs):
+def transform_clean_pop5(file_path, **kwargs):
     try:
         print(f"Transforming file: {file_path}")
         # Extract table name and millesime from file name
@@ -61,18 +61,12 @@ def transform_clean_pop2(file_path, **kwargs):
         print(df.head())
 
         # Map columns based on file
-        if 'NIVGEO' in df.columns and 'SEXE' in df.columns and 'CATPR' in df.columns and 'AGEQ100' in df.columns:
-            df = df[['NIVGEO', 'CODGEO', 'SEXE', 'CATPR', 'AGEQ100', 'NB']]
-            df.columns = ['nivgeo', 'codgeo', 'sexe', 'catpr', 'ageq100', 'nb']
-        elif 'NIVEAU' in df.columns and 'C_AGEQ' in df.columns and 'C_CATPR' in df.columns and 'C_SEXE' in df.columns:
-            df = df[['NIVEAU', 'CODGEO', 'C_SEXE', 'C_AGEQ', 'C_CATPR', 'NB']]
-            df.columns = ['nivgeo', 'codgeo', 'sexe', 'ageq100', 'catpr', 'nb']
-        elif 'NIVEAU' in df.columns and 'C_AGEQ10' in df.columns and 'C_CATPR' in df.columns and 'C_SEXE' in df.columns:
-            df = df[['NIVEAU', 'CODGEO', 'C_SEXE', 'C_AGEQ10', 'C_CATPR', 'NB']]
-            df.columns = ['nivgeo', 'codgeo', 'sexe', 'ageq100', 'catpr', 'nb']
-        elif 'NIVEAU' in df.columns and 'C_AGEQ100' in df.columns and 'C_CATPR' in df.columns and 'C_SEXE' in df.columns:
-            df = df[['NIVEAU', 'CODGEO', 'C_SEXE', 'C_AGEQ100', 'C_CATPR', 'NB']]
-            df.columns = ['nivgeo', 'codgeo', 'sexe', 'ageq100', 'catpr', 'nb']
+        if 'NIVEAU' in df.columns and 'C_SEXE' in df.columns and 'C_AGEQ65' in df.columns and 'C_TACTR' in df.columns:
+            df = df[['NIVEAU', 'CODGEO', 'C_SEXE', 'C_AGEQ65', 'C_TACTR', 'NB']]
+            df.columns = ['nivgeo', 'codgeo', 'sexe', 'ageq65', 'tactr', 'nb']
+        elif 'NIVGEO' in df.columns and 'SEXE' in df.columns and 'AGEQ65' in df.columns and 'TACTR' in df.columns:
+            df = df[['NIVGEO', 'CODGEO', 'SEXE', 'AGEQ65', 'TACTR', 'NB']]
+            df.columns = ['nivgeo', 'codgeo', 'sexe', 'ageq65', 'tactr', 'nb']
         else:
             raise KeyError("Required columns not found in DataFrame")
 
@@ -80,7 +74,7 @@ def transform_clean_pop2(file_path, **kwargs):
         df['nb'] = df['nb'].str.replace(',', '.').astype(float)
         df = df.dropna(subset=file_required)
         df['millesime'] = millesime
-        df['ageq100'] = df['ageq100'].str.zfill(3)
+        df['ageq65'] = df['ageq65'].str.zfill(3)
 
         # Log the transformed DataFrame columns for debugging
         print(df.columns)
@@ -105,24 +99,22 @@ def transform_clean_pop2(file_path, **kwargs):
             print(f"Error cleaning up temporary files: {str(cleanup_error)}")
 
 with DAG(
-    'insee_td_pop2',
+    'insee_td_pop5',
     default_args=default_args,
-    description='Transform, clean, map, and integrate data for pop2',
+    description='Transform, clean, map, and integrate data for pop5',
     schedule_interval=None,
     start_date=days_ago(1),
     catchup=False
 ) as dag:
-    print("INSEE TD POP1A script")
-
     prepare_table_task = PythonOperator(
-        task_id='prepare_table_pop2',
+        task_id='prepare_table_pop5',
         python_callable=prepare_table,
         op_args=['{{ dag_run.conf["millesime"] }}', table_name],
     )
 
     transform_clean_task = PythonOperator(
-        task_id='transform_clean_pop2',
-        python_callable=transform_clean_pop2,
+        task_id='transform_clean_pop5',
+        python_callable=transform_clean_pop5,
         provide_context=True,
         op_args=['{{ dag_run.conf["file_path"] }}'],
     )
@@ -130,7 +122,10 @@ with DAG(
     load_task = PythonOperator(
         task_id='load_to_db',
         python_callable=load_to_db,
-        op_args=['{{ task_instance.xcom_pull(task_ids="transform_clean_pop2") }}', table_name],
+        op_args=[
+            '{{ task_instance.xcom_pull(task_ids="transform_clean_pop5") }}', 
+            table_name
+        ],
     )
 
     prepare_table_task >> transform_clean_task >> load_task
