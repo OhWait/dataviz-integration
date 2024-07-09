@@ -6,3 +6,9 @@ up: ## Start the app
 
 down: ## Shut down the app
 	docker compose down
+
+chown: ## adapt access directory
+	sudo chown -R 50000:$$USER ./upload
+
+chmod:
+	sudo chmod -R 777 ./upload
