@@ -35,7 +35,7 @@ def trigger_dags(folder_path, year, context):
     if (len(year) == 0):
         return
 
-    dags = ['commune', 'canton', 'arrondissement']
+    dags = ['commune', 'canton', 'arrondissement', 'departement', 'region']
 
     for dag in dags:
         trigger = TriggerDagRunOperator(
