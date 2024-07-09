@@ -3,9 +3,9 @@ import re
 import pandas as pd
 import psycopg2
 import tempfile
+import shutil
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.dates import days_ago
 
 default_args = {
@@ -44,33 +44,6 @@ territoires = [
     }
 ]
 
-def find_and_trigger_subdag(**kwargs):
-    folders = get_folders()
-    year_status = {}
-    
-    for folder in folders:
-        folder_name = os.path.basename(folder)
-        year = extract_year_from_folder(folder_name)
-        
-        if year and year.isdigit() and len(year) == 4:
-            print(f"{year} found, processing files in {folder}")
-            year_status[year] = True
-            for territoire in territoires:
-                process_file_by_territoire(territoire, folder, year, year_status)
-                
-            print(f"Status by year: {year_status}")
-                
-            # Check if all tasks for the year were successful
-            if year_status.get(year):
-                # Remove the directory
-                try:
-                    os.rmdir(folder)
-                    print(f"Successfully deleted directory {folder}")
-                except OSError as e:
-                    print(f"Failed to delete directory {folder}: {e}")
-        else:
-            print(f"Year is missing or invalid in {folder}, skipping")
-
 def get_folders(**kwargs):
     base_directory_path = '/opt/airflow/upload/territoire'
     folders = []
@@ -89,7 +62,7 @@ def extract_year_from_folder(folder_name):
     if match:
         return match.group(1)
     return None
-        
+
 def process_file_by_territoire(territoire, folder_path, year, year_status):
     files = [f for f in os.listdir(folder_path) if territoire['table_name'] in f.lower() and f.endswith('.csv')]
 
@@ -97,13 +70,12 @@ def process_file_by_territoire(territoire, folder_path, year, year_status):
 
     for file_name in files:
         file_path = os.path.join(folder_path, file_name)
-        success = process_file(territoire, file_path, year)
+        result = process_file(territoire, file_path, year, year_status)
         
-        if not success:
-            # If any file processing fails, mark the year as not complete
-            year_status[year] = False
+        print(f"Statut : {result}, process_file_by_territoire({territoire}, {year})")
+        year_status[year] = result
 
-def process_file(territoire, file_path, year):
+def process_file(territoire, file_path, year, year_status):
     try:
         df = pd.read_csv(file_path, dtype=str)
         df.columns = df.columns.str.lower()
@@ -132,7 +104,7 @@ def process_file(territoire, file_path, year):
     except Exception as e:
         print(f"Failed to process file {file_path}: {e}")
         return False
-    
+
 def clean_table(table_name, year):
     try:
         conn = psycopg2.connect(
@@ -191,15 +163,43 @@ def insert_data(df, table_name):
         # Suppression du fichier temporaire
         os.remove(transformed_file.name)
         print(f"Successfully deleted temporary file {transformed_file.name}.")
-
+        
     except Exception as e:
         print(f"Failed to insert data into PostgreSQL table {table_name}: {e}")
         raise
 
+def find_and_trigger_subdag(**kwargs):
+    folders = get_folders()
+    year_status = {}
+
+    for folder in folders:
+        folder_name = os.path.basename(folder)
+        year = extract_year_from_folder(folder_name)
+        
+        if year and year.isdigit() and len(year) == 4:
+            print(f"{year} found, processing files in {folder}")
+            year_status[year] = True
+            for territoire in territoires:
+                process_file_by_territoire(territoire, folder, year, year_status)
+        
+            print(f"Status : {year_status}")
+                
+            # Check if all tasks for the year were successful
+            if year_status.get(year):
+                # Remove the directory
+                try:
+                    shutil.rmtree(folder)
+                    print(f"Successfully deleted directory {folder}")
+                except OSError as e:
+                    print(f"Failed to delete directory {folder}: {e}")
+        
+        else:
+            print(f"Year is missing or invalid in {folder}, skipping")
+
 with DAG(
     'cog_integration',
     default_args=default_args,
-    description='Import COG data from CSV files',
+    description='Import commune and canton data from CSV files',
     schedule_interval=None,
     start_date=days_ago(1),
     catchup=False
@@ -211,4 +211,3 @@ with DAG(
     )
 
     find_and_trigger_subdag_task
-
