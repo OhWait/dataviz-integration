@@ -5,6 +5,7 @@ import psycopg2
 import tempfile
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
+from airflow.hooks.postgres_hook import PostgresHook
 from airflow.utils.dates import days_ago
 
 default_args = {
@@ -15,7 +16,13 @@ default_args = {
     'retries': 1
 }
 
-def find_and_process_files(**context):
+# Colonnes obligatoires dans la table PostgreSQL
+pg_columns = ['annee', 'can', 'dep', 'reg', 'compct', 'burcentral', 'tncc', 'ncc', 'nccenr', 'libelle', 'typect']
+
+# Colonnes obligatoires dans les fichiers CSV
+required_columns = ['can', 'ncc', 'nccenr', 'libelle']
+
+def find_and_process_canton_files(**context):
     base_directory_path = '/opt/airflow/upload/territoire'
     
     for folder_name in os.listdir(base_directory_path):
@@ -33,12 +40,12 @@ def extract_year_from_folder(folder_name):
     return None
 
 def process_files_in_folder(folder_path, year):
-    files = [f for f in os.listdir(folder_path) if 'commune' in f.lower() and f.endswith('.csv')]
+    files = [f for f in os.listdir(folder_path) if 'canton' in f.lower() and f.endswith('.csv')]
     for file_name in files:
         file_path = os.path.join(folder_path, file_name)
-        process_file(file_path, year)
+        process_canton_file(file_path, year)
 
-def process_file(file_path, year):
+def process_canton_file(file_path, year):
     try:
         df = pd.read_csv(file_path, dtype=str)
         print(df.head())
@@ -46,43 +53,22 @@ def process_file(file_path, year):
         # Convertir les noms de colonnes en minuscules
         df.columns = df.columns.str.lower()
         
-        required_columns = ['typecom', 'com', 'ncc', 'nccenr', 'libelle']
-        optional_columns = ['reg', 'dep', 'ctcd', 'arr', 'tncc', 'can', 'comparent']
-        
         # Vérifier si toutes les colonnes obligatoires sont présentes
         if not set(required_columns).issubset(df.columns):
             print(f"File {file_path} does not contain all required columns and will be ignored.")
             return
         
-        # Remplacer les valeurs vides par None
-        df = df.where(pd.notnull(df), None)
-        
-        # Ajouter l'année au DataFrame
+        # Transform
+        df = df[df['can'].notna() & (df['can'] != '')]
         df['annee'] = year
-        
-        # Ajouter les colonnes optionnelles si présentes dans le DataFrame
-        for col in optional_columns:
-            if col in df.columns:
-                continue
-            else:
-                df[col] = None
-        
-        # Remapping columns to match the order of PostgreSQL table
-        columns_order = ['annee', 'typecom', 'com', 'reg', 'dep', 'ctcd', 'arr', 'tncc', 'ncc', 'nccenr', 'libelle', 'can', 'comparent']
-        df = df.reindex(columns=columns_order, fill_value=None)
-        
-        # Nettoyage de la table pour l'année spécifiée
-        clean_table(year)
-        
-        # Insertion des données dans la base de données
-        insert_data(df)
+        df = df.reindex(columns=pg_columns, fill_value=None)
+        df = df.dropna(subset=required_columns, how='any')
 
-        # Si l'insertion réussit, supprimer le fichier
+        clean_table(year)
+        insert_data(df)
         os.remove(file_path)
-        print(f"Successfully deleted file {file_path}.")
-        
+
     except Exception as e:
-        # Journaliser l'erreur et la remonter pour déclencher une nouvelle tentative ou un échec
         print(f"Failed to process file {file_path}: {e}")
         raise
 
@@ -97,7 +83,7 @@ def clean_table(year):
         )
         cursor = conn.cursor()
         
-        delete_sql = "DELETE FROM territoire.commune WHERE annee = %s"
+        delete_sql = "DELETE FROM territoire.canton WHERE annee = %s"
         cursor.execute(delete_sql, (year,))
         
         conn.commit()
@@ -109,7 +95,7 @@ def clean_table(year):
     except Exception as e:
         print(f"Failed to clean data for year {year} in PostgreSQL table: {e}")
         raise
-
+    
 def insert_data(df):
     try:
         conn = psycopg2.connect(
@@ -123,10 +109,12 @@ def insert_data(df):
         
         transformed_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
         df.to_csv(transformed_file.name, index=False, na_rep='')
+        
+        print(df.head())
 
         # Générer dynamiquement la commande COPY avec les colonnes du DataFrame
         copy_sql = """
-            COPY territoire.commune
+            COPY territoire.canton
             FROM STDIN WITH CSV HEADER
             DELIMITER AS ','
             NULL AS ''
@@ -144,23 +132,23 @@ def insert_data(df):
         # Suppression du fichier temporaire
         os.remove(transformed_file.name)
         print(f"Successfully deleted temporary file {transformed_file.name}.")
-        
+
     except Exception as e:
         print(f"Failed to insert data into PostgreSQL table: {e}")
         raise
 
 with DAG(
-    'import_commune_data',
+    'import_canton_data',
     default_args=default_args,
-    description='Import commune data from CSV files',
+    description='Import canton data from CSV files',
     schedule_interval=None,
     start_date=days_ago(1),
     catchup=False
 ) as dag:
-    find_and_process_files_task = PythonOperator(
-        task_id='find_and_process_files',
-        python_callable=find_and_process_files,
+    find_and_process_canton_files_task = PythonOperator(
+        task_id='find_and_process_canton_files',
+        python_callable=find_and_process_canton_files,
         provide_context=True,
     )
 
-    find_and_process_files_task
+    find_and_process_canton_files_task
